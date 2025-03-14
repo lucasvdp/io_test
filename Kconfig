@@ -1,0 +1,24 @@
+#
+# Copyright (c) 2020 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+#
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
+
+# menuconfig MY_SPI_CONFIG
+#     bool "Enable SPI Test Mode"
+
+# choice
+#     prompt "SPI Mode"
+#     default MY_SPI_MASTER
+
+# config MY_SPI_MASTER
+#     bool "SPI Master Mode"
+
+# config MY_SPI_SLAVE
+#     bool "SPI Slave Mode"
+
+# endchoice
