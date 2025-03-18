@@ -18,6 +18,8 @@ uint8_t rx_buffer[2048];
 #include "spi_master_dt.c"
 #elif DT_NODE_EXISTS(DT_NODELABEL(spi_slave))
 #include "spi_slave_dt.c"
+#elif DT_NODE_EXISTS(DT_NODELABEL(uart))
+#include "uart_dt.c"
 #else
 #define RAW_TEST
 static uint8_t input;
