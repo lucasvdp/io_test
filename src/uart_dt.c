@@ -12,15 +12,14 @@
 
 const struct device *p_dev;
 
-bool received_something = false;
-
+int received;
 
 void uart_callback(const struct device *dev, struct uart_event *evt, void *user_data)
 {
-	printf("uart callback %d\n", evt->type);
-
 	if (evt->type == UART_RX_RDY) {
-		received_something = true;
+		received = evt->data.rx.len;
+	} else if (evt->type == UART_RX_STOPPED) {
+		received = -evt->data.rx_stop.reason;
 	}
 }
 
@@ -31,37 +30,49 @@ void init(void)
 	p_dev = DEVICE_DT_GET(USED_DEV);
 
 	if (p_dev == NULL) {
-		printf("Could not get device\n");
+		lp_printf("Could not get device\n");
 		return;
 	}
 
 	err = uart_callback_set(p_dev, uart_callback, NULL);
 	if (err) {
-		printf("Could not set uart callback: %d\n", err);
+		lp_printf("Could not set uart callback: %d\n", err);
 		return;
 	}
 
-	printf("Using %s %p %p %p\n", p_dev->name, p_dev->api, p_dev->config, p_dev->data);
+	lp_printf("\nUsing %s %p %p %p\n", p_dev->name, p_dev->api, p_dev->config, p_dev->data);
 }
 
 
-void test(size_t size)
+void send(size_t size)
 {
 	int err;
 
-	printf("\ntest %d\n", size);
 	err = uart_tx(p_dev, tx_buffer, size, 1000);
-	printf("result %d\n", err);
-
-	sleep(1);
-
-	received_something = false;
-	uart_rx_enable(p_dev, rx_buffer, sizeof(rx_buffer), 1000);
-
-	while (!received_something) {
-		// printf("pending %d\n", uart_irq_is_pending(p_dev));
-		sleep(1);
+	if (err) {
+		lp_printf("Could not send: %d\n", err);
+		return;
 	}
 }
 
+int recv(int size, int timeout)
+{
+	received = 0;
+	uart_rx_enable(p_dev, rx_buffer, size, 1000);
 
+	for (int i = 0; i < timeout; i++) {
+		// printf("pending %d\n", uart_irq_is_pending(p_dev));
+		if (received) {
+			return received;
+		}
+		sleep(1);
+	}
+
+	uart_rx_disable(p_dev);
+	return 0;
+}
+
+void deinit(void)
+{
+
+}
