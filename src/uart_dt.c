@@ -61,7 +61,6 @@ int recv(int size, int timeout)
 	uart_rx_enable(p_dev, rx_buffer, size, 1000);
 
 	for (int i = 0; i < timeout; i++) {
-		// printf("pending %d\n", uart_irq_is_pending(p_dev));
 		if (received) {
 			return received;
 		}

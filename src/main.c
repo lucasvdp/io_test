@@ -50,7 +50,8 @@ void lp_print_rx(int received)
 			rx_buffer[4], rx_buffer[5], rx_buffer[6], rx_buffer[7]);
 
 	if (received != (rx_buffer[0] << 8) + rx_buffer[1]) {
-		lp_printf("Size mismatch\n");
+		lp_printf("Size mismatch, first bytes indicate %d but received %d\n",
+			  (rx_buffer[0] << 8) + rx_buffer[1], received);
 	}
 
 	for (int i = 2; i < received; i++) {
@@ -108,6 +109,11 @@ uint8_t lp_get(void)
 #define SPI_SLAVE NRF_SPIS1_NS
 #define GPIO      NRF_P0_NS
 #define UART      NRF_UARTE0_NS
+
+void spi_master_init(void);
+void spi_master_send(int size);
+int spi_master_recv(int size, int timeout);
+void spi_master_deinit(void);
 
 void spi_slave_init(void);
 void spi_slave_send(int size);
@@ -185,8 +191,9 @@ int main(void)
 
 		lp_printf("\nSelect test:\n");
 		lp_printf("  a. None\n");
-		lp_printf("  b. SPI slave\n");
-		lp_printf("  c. UART basic\n");
+		lp_printf("  b. SPI master\n");
+		lp_printf("  c. SPI slave\n");
+		lp_printf("  d. UART basic\n");
 
 		input = lp_get();
 
@@ -198,13 +205,20 @@ int main(void)
 			deinit = no_deinit;
 			break;
 		case 'b':
+			test_name = "SPI master";
+			spi_master_init();
+			send = spi_master_send;
+			recv = spi_master_recv;
+			deinit = spi_master_deinit;
+			break;
+		case 'c':
 			test_name = "SPI slave";
 			spi_slave_init();
 			send = spi_slave_send;
 			recv = spi_slave_recv;
 			deinit = spi_slave_deinit;
 			break;
-		case 'c':
+		case 'd':
 			test_name = "UART basic";
 			uart_basic_init();
 			send = uart_basic_send;

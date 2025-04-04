@@ -115,9 +115,12 @@ int uart_basic_recv(int size, int timeout_sec)
 	}
 
 	NRF_TIMER1_NS->TASKS_STOP = 1;
+	NRF_TIMER1_NS->INTENCLR = TIMER_INTENCLR_COMPARE0_Msk;
 
 	rx_done = false;
 	timeout = false;
+
+	UART->INTENCLR = UARTE_INTENCLR_ENDRX_Msk;
 
 	return UART->RXD.AMOUNT;
 }

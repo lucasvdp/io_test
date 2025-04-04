@@ -11,6 +11,7 @@ project(nrf91_com_test)
 
 # NORDIC SDK APP START
 target_sources(app PRIVATE src/main.c)
+target_sources(app PRIVATE src/spi_master_basic.c)
 target_sources(app PRIVATE src/spi_slave_basic.c)
 target_sources(app PRIVATE src/uart_basic.c)
 # NORDIC SDK APP END
