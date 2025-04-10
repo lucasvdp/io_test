@@ -100,6 +100,10 @@ uint8_t lp_get(void)
 /* west build -b nrf9151dk/nrf9151/ns --pristine -- -DDTC_OVERLAY_FILE=boards/uart.overlay */
 #include "uart_dt.c"
 
+#elif DT_NODE_EXISTS(DT_NODELABEL(twi_master))
+
+/* west build -b nrf9151dk/nrf9151/ns --pristine -- -DDTC_OVERLAY_FILE=boards/twi_master.overlay */
+#include "twi_master_dt.c"
 #else
 
 /* Not using device tree, use runtime test selection using UART0. */
@@ -124,6 +128,17 @@ void uart_basic_init(void);
 void uart_basic_send(int size);
 int uart_basic_recv(int size, int timeout);
 void uart_basic_deinit(void);
+
+void twi_master_init(void);
+void twi_master_send(int size);
+int twi_master_recv(int size, int timeout);
+void twi_master_deinit(void);
+
+void twi_slave_init(void);
+void twi_slave_send(int size);
+int twi_slave_recv(int size, int timeout);
+void twi_slave_deinit(void);
+
 
 void no_send(int size)
 {
@@ -194,6 +209,8 @@ int main(void)
 		lp_printf("  b. SPI master\n");
 		lp_printf("  c. SPI slave\n");
 		lp_printf("  d. UART basic\n");
+		lp_printf("  e. TWI master\n");
+		lp_printf("  f. TWI slave\n");
 
 		input = lp_get();
 
@@ -224,6 +241,20 @@ int main(void)
 			send = uart_basic_send;
 			recv = uart_basic_recv;
 			deinit = uart_basic_deinit;
+			break;
+		case 'e':
+			test_name = "TWI master";
+			twi_master_init();
+			send = twi_master_send;
+			recv = twi_master_recv;
+			deinit = twi_master_deinit;
+			break;
+		case 'f':
+			test_name = "TWI slave";
+			twi_slave_init();
+			send = twi_slave_send;
+			recv = twi_slave_recv;
+			deinit = twi_slave_deinit;
 			break;
 		default:
 			test_name = "";

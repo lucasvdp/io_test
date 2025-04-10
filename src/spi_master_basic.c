@@ -80,7 +80,7 @@ void spi_master_send(int size)
 	/* CS: low. */
 	GPIO->OUTCLR = GPIO_OUTCLR_PIN7_Msk;
 
-	usleep(1);
+	// usleep(80);
 
 	SPI_MASTER->TASKS_START = 1;
 
@@ -107,7 +107,7 @@ int spi_master_recv(int size, int timeout)
 	/* CS: low. */
 	GPIO->OUTCLR = GPIO_OUTCLR_PIN7_Msk;
 
-	usleep(1);
+	// usleep(80);
 
 	SPI_MASTER->TASKS_START = 1;
 

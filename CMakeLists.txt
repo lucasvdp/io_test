@@ -14,6 +14,8 @@ target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/spi_master_basic.c)
 target_sources(app PRIVATE src/spi_slave_basic.c)
 target_sources(app PRIVATE src/uart_basic.c)
+target_sources(app PRIVATE src/twi_master_basic.c)
+target_sources(app PRIVATE src/twi_slave_basic.c)
 # NORDIC SDK APP END
 
 zephyr_include_directories(src)
