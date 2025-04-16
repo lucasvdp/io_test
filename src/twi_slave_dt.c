@@ -8,9 +8,9 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/pm/device.h>
 
-#define USED_DEV DT_NODELABEL(twi_master)
-#define DT_DRV_COMPAT nordic_nrf_twim
-#define TWI_MASTER NRF_TWIM1_NS
+#define USED_DEV DT_NODELABEL(twi_slave)
+// #define DT_DRV_COMPAT nordic_nrf_twis
+#define TWI_SLAVE NRF_TWIS1_NS
 
 const struct device *p_dev;
 
@@ -22,9 +22,9 @@ void init(void)
 		lp_printf("Could not get device\n");
 		return;
 	}
-	lp_printf("\nUsing TWI Master device: %s\n", p_dev->name);
-	lp_printf("    SCL     P0.%02d\n", TWI_MASTER->PSEL.SCL);
-	lp_printf("    SDA     P0.%02d\n", TWI_MASTER->PSEL.SDA);
+	lp_printf("\nUsing TWI Slave device: %s\n", p_dev->name);
+	lp_printf("    SCL     P0.%02d\n", TWI_SLAVE->PSEL.SCL);
+	lp_printf("    SDA     P0.%02d\n", TWI_SLAVE->PSEL.SDA);
 }
 
 int send(int size)

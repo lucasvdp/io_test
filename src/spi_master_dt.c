@@ -10,6 +10,7 @@
 
 #define USED_DEV DT_NODELABEL(spi_master)
 #define DT_DRV_COMPAT nordic_nrf_spim
+#define SPI_MASTER NRF_SPIM1_NS
 
 const struct device *p_dev;
 struct spi_config spi_cfg = {
@@ -28,17 +29,18 @@ void init(void)
 		lp_printf("Could not get device\n");
 		return;
 	}
-	lp_printf("\nUsing SPI Master device %s\n", p_dev->name);
+	lp_printf("\nUsing SPI Master device: %s\n", p_dev->name);
+	lp_printf("    SCK     P0.%02d\n", SPI_MASTER->PSEL.SCK);
+	lp_printf("    MOSI    P0.%02d\n", SPI_MASTER->PSEL.MOSI);
+	lp_printf("    MISO    P0.%02d\n", SPI_MASTER->PSEL.MISO);
+	lp_printf("    CS      P0.%02d\n", spi_cfg.cs.gpio.pin);
 
 	pm_device_action_run(p_dev, PM_DEVICE_ACTION_RESUME);
 }
 
-void send(int size)
+int send(int size)
 {
 	int err;
-
-	/* Delay so the Slave is always ready first. */
-	sleep(2);
 
 	const struct spi_buf tx_buf = {
 		.buf = tx_buffer,
@@ -50,17 +52,13 @@ void send(int size)
 	};
 
 	err = spi_write(p_dev, &spi_cfg, &tx);
-	if (err) {
-		lp_printf("Write failed %d\n", err);
-	}
+
+	return err == 0 ? size : err;
 }
 
-int recv(int size, int timeout)
+int recv(int size)
 {
 	int err;
-
-	/* Delay so the Slave is always ready first. */
-	sleep(2);
 
 	struct spi_buf rx_buf = {
 		.buf = rx_buffer,
@@ -72,11 +70,8 @@ int recv(int size, int timeout)
 	};
 
 	err = spi_read(p_dev, &spi_cfg, &rx);
-	if (err) {
-		lp_printf("Read failed %d\n", err);
-	}
 
-	return size;
+	return err == 0 ? size : err;
 }
 
 void deinit(void)

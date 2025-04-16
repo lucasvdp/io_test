@@ -11,6 +11,10 @@
 
 #define SPI_SLAVE NRF_SPIS1_NS
 #define GPIO      NRF_P0_NS
+#define PIN_SCK    6
+#define PIN_MISO   3
+#define PIN_MOSI   2
+#define PIN_CS     7
 
 extern uint8_t tx_buffer[1024];
 extern uint8_t rx_buffer[2048];
@@ -19,26 +23,26 @@ int lp_printf(const char *fmt, ...);
 
 static bool transfer_done = false;
 
-static void spi_slave_isr(const void *arg)
+static void spis_isr(const void *arg)
 {
 	transfer_done = true;
 	SPI_SLAVE->EVENTS_END = 0;
 }
 
-void spi_slave_init(void)
+void spis_init(uint32_t bitrate)
 {
 	/* SCK: Dir input, input connect, pull disabled, drive s0s1, sense disabled. */
-	GPIO->PIN_CNF[6] = 0;
+	GPIO->PIN_CNF[PIN_SCK] = 0;
 	/* MOSI: Dir input, input connect, pull disabled, drive s0s1, sense disabled. */
-	GPIO->PIN_CNF[2] = 0;
+	GPIO->PIN_CNF[PIN_MOSI] = 0;
 	/* CSN: Dir input, input connect, pull disabled, drive s0s1, sense disabled. */
-	GPIO->PIN_CNF[7] = 0;
+	GPIO->PIN_CNF[PIN_CS] = 0;
 
 	/* Configure pins. */
-	SPI_SLAVE->PSEL.SCK = 6;
-	SPI_SLAVE->PSEL.MISO = 3;
-	SPI_SLAVE->PSEL.MOSI = 2;
-	SPI_SLAVE->PSEL.CSN = 7;
+	SPI_SLAVE->PSEL.SCK = PIN_SCK;
+	SPI_SLAVE->PSEL.MISO = PIN_MISO;
+	SPI_SLAVE->PSEL.MOSI = PIN_MOSI;
+	SPI_SLAVE->PSEL.CSN = PIN_CS;
 
 	/* Configure buffers. */
 	SPI_SLAVE->RXD.PTR = (int)rx_buffer;
@@ -52,20 +56,24 @@ void spi_slave_init(void)
 
 	/* Enable interrupt to wake up at the end of a message. */
 	SPI_SLAVE->INTENSET = SPIS_INTENSET_END_Msk;
-	irq_connect_dynamic(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn, 0, spi_slave_isr, NULL, 0);
+	irq_connect_dynamic(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn, 0, spis_isr, NULL, 0);
 	irq_enable(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn);
 
 	/* Enable. */
 	SPI_SLAVE->ENABLE = SPIS_ENABLE_ENABLE_Enabled;
 
 	/* MISO: Dir output, input disconnect, pull disabled, drive h0h1, sense disabled. */
-	GPIO->PIN_CNF[3] = (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos) |
-			   (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
-			   (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos);
+	GPIO->PIN_CNF[PIN_MISO] = (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos) |
+				  (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
+				  (GPIO_PIN_CNF_DRIVE_H0H1 << GPIO_PIN_CNF_DRIVE_Pos);
 
+	lp_printf("    SCK     P0.%02d\n", PIN_SCK);
+	lp_printf("    MOSI    P0.%02d\n", PIN_MOSI);
+	lp_printf("    MISO    P0.%02d\n", PIN_MISO);
+	lp_printf("    CS      P0.%02d\n", PIN_CS);
 }
 
-void spi_slave_send(int size)
+int spis_send(int size)
 {
 	SPI_SLAVE->TXD.MAXCNT = size;
 	SPI_SLAVE->RXD.MAXCNT = 0;
@@ -77,12 +85,10 @@ void spi_slave_send(int size)
 
 	transfer_done = false;
 
-	if (SPI_SLAVE->TXD.AMOUNT != size) {
-		lp_printf("Send %d instead of %d bytes\n", SPI_SLAVE->TXD.AMOUNT, size);
-	}
+	return SPI_SLAVE->TXD.AMOUNT;
 }
 
-int spi_slave_recv(int size, int timeout_sec)
+int spis_recv(int size)
 {
 	SPI_SLAVE->TXD.MAXCNT = 0;
 	SPI_SLAVE->RXD.MAXCNT = size;
@@ -97,9 +103,9 @@ int spi_slave_recv(int size, int timeout_sec)
 	return SPI_SLAVE->RXD.AMOUNT;
 }
 
-void spi_slave_deinit(void)
+void spis_deinit(void)
 {
 	SPI_SLAVE->INTENCLR = SPIS_INTENCLR_END_Msk;
-	GPIO->PIN_CNF[3] = 0;
+	GPIO->PIN_CNF[PIN_MISO] = 0;
 	SPI_SLAVE->ENABLE = 0;
 }

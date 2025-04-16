@@ -44,23 +44,17 @@ void init(void)
 }
 
 
-void send(size_t size)
+int send(size_t size)
 {
-	int err;
-
-	err = uart_tx(p_dev, tx_buffer, size, 1000);
-	if (err) {
-		lp_printf("Could not send: %d\n", err);
-		return;
-	}
+	return uart_tx(p_dev, tx_buffer, size, 1000);
 }
 
-int recv(int size, int timeout)
+int recv(int size)
 {
 	received = 0;
 	uart_rx_enable(p_dev, rx_buffer, size, 1000);
 
-	for (int i = 0; i < timeout; i++) {
+	for (int i = 0; i < 60; i++) {
 		if (received) {
 			return received;
 		}

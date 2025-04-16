@@ -11,6 +11,8 @@
 
 #define TWI_MASTER NRF_TWIM1_NS
 #define GPIO       NRF_P0_NS
+#define PIN_SCL    2
+#define PIN_SDA    3
 
 extern uint8_t tx_buffer[1024];
 extern uint8_t rx_buffer[2048];
@@ -20,7 +22,7 @@ int lp_printf(const char *fmt, ...);
 static bool transfer_done = false;
 static bool error = false;
 
-void twi_master_isr(const void *arg)
+void twim_isr(const void *arg)
 {
 	if (TWI_MASTER->EVENTS_STOPPED) {
 		transfer_done = true;
@@ -32,64 +34,71 @@ void twi_master_isr(const void *arg)
 	}
 }
 
-void twi_master_init(void)
+void twim_init(uint32_t bitrate)
 {
 	/* SCK: Dir input, input disconnect, pull up, drive s0d1, sense disabled. */
-	GPIO->PIN_CNF[2] = (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
-			   (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos) |
-			   (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos);
+	GPIO->PIN_CNF[PIN_SCL] = (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
+				 (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos) |
+				 (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos);
 	/* MOSI: Dir input, input disconnect, pull up, drive s0d1, sense disabled. */
-	GPIO->PIN_CNF[3] = (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
-			   (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos) |
-			   (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos);
+	GPIO->PIN_CNF[PIN_SDA] = (GPIO_PIN_CNF_INPUT_Disconnect << GPIO_PIN_CNF_INPUT_Pos) |
+				 (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos) |
+				 (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos);
 
 	/* Configure pins. */
-	TWI_MASTER->PSEL.SCL = 2;
-	TWI_MASTER->PSEL.SDA = 3;
+	TWI_MASTER->PSEL.SCL = PIN_SCL;
+	TWI_MASTER->PSEL.SDA = PIN_SDA;
 
 	/* Configure buffers. */
 	TWI_MASTER->RXD.PTR = (int)rx_buffer;
 	TWI_MASTER->TXD.PTR = (int)tx_buffer;
 
 	/* Configure. */
-	TWI_MASTER->FREQUENCY = TWIM_FREQUENCY_FREQUENCY_K400;
+	TWI_MASTER->FREQUENCY = bitrate;
 	TWI_MASTER->ADDRESS = 42;
 
 	/* Stop after transfer. */
 	TWI_MASTER->SHORTS = TWIM_SHORTS_LASTTX_STOP_Msk | TWIM_SHORTS_LASTRX_STOP_Msk;
 
 	/* Enable interrupt to wake up at the end of a message. */
-	TWI_MASTER->INTENSET = TWIM_INTEN_STOPPED_Msk | TWIM_INTEN_ERROR_Msk;
-	irq_connect_dynamic(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn, 0, twi_master_isr, NULL, 0);
+	TWI_MASTER->INTENSET = TWIM_INTENSET_STOPPED_Msk | TWIM_INTENSET_ERROR_Msk;
+	irq_connect_dynamic(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn, 0, twim_isr, NULL, 0);
 	irq_enable(SPIM1_SPIS1_TWIM1_TWIS1_UARTE1_IRQn);
 
 	/* Enable. */
 	TWI_MASTER->ENABLE = TWIM_ENABLE_ENABLE_Enabled;
+
+	lp_printf("    SCL     P0.%02d\n", PIN_SCL);
+	lp_printf("    SDA     P0.%02d\n", PIN_SDA);
 }
 
-void twi_master_send(int size)
+int twim_send(int size)
 {
+	int err = 0;
+
 	transfer_done = false;
 	error = false;
 
 	TWI_MASTER->TXD.MAXCNT = size;
 	TWI_MASTER->TASKS_STARTTX = 1;
 
-
 	while (!transfer_done) {
 		if (error) {
-			lp_printf("  Send error %d\n", TWI_MASTER->ERRORSRC);
-			TWI_MASTER->ERRORSRC = TWI_MASTER->ERRORSRC;
+			err = TWI_MASTER->ERRORSRC;
+			TWI_MASTER->ERRORSRC = err;
 			TWI_MASTER->TASKS_STOP = 1;
-			break;
+			return -err;
 		}
-
 		__WFI();
 	}
+
+	return TWI_MASTER->TXD.AMOUNT;
 }
 
-int twi_master_recv(int size, int timeout_sec)
+int twim_recv(int size)
 {
+	int err = 0;
+
 	transfer_done = false;
 	error = false;
 
@@ -98,10 +107,10 @@ int twi_master_recv(int size, int timeout_sec)
 
 	while (!transfer_done) {
 		if (error) {
-			lp_printf("  Recv error %d\n", TWI_MASTER->ERRORSRC);
-			TWI_MASTER->ERRORSRC = TWI_MASTER->ERRORSRC;
+			err = TWI_MASTER->ERRORSRC;
+			TWI_MASTER->ERRORSRC = err;
 			TWI_MASTER->TASKS_STOP = 1;
-			break;
+			return -err;
 		}
 		__WFI();
 	}
@@ -109,10 +118,11 @@ int twi_master_recv(int size, int timeout_sec)
 	return TWI_MASTER->RXD.AMOUNT;
 }
 
-void twi_master_deinit(void)
+void twim_deinit(void)
 {
-	TWI_MASTER->INTENCLR = TWIM_INTENCLR_STOPPED_Msk;
-	GPIO->PIN_CNF[2] = 0;
-	GPIO->PIN_CNF[3] = 0;
+	TWI_MASTER->INTENCLR = TWIM_INTENCLR_STOPPED_Msk| TWIM_INTENCLR_ERROR_Msk;
+	TWI_MASTER->SHORTS = 0;
+	GPIO->PIN_CNF[PIN_SCL] = 0;
+	GPIO->PIN_CNF[PIN_SDA] = 0;
 	TWI_MASTER->ENABLE = 0;
 }

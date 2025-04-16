@@ -21,7 +21,11 @@ void init(void)
 		lp_printf("Could not get device\n");
 		return;
 	}
-	lp_printf("\nUsing %s %p %p %p\n", p_dev->name, p_dev->api, p_dev->config, p_dev->data);
+	lp_printf("\nUsing SPI Slave device: %s\n", p_dev->name);
+	lp_printf("    SCK     P0.%02d\n", SPI_SLAVE->PSEL.SCK);
+	lp_printf("    MOSI    P0.%02d\n", SPI_SLAVE->PSEL.MOSI);
+	lp_printf("    MISO    P0.%02d\n", SPI_SLAVE->PSEL.MISO);
+	lp_printf("    CS      P0.%02d\n", SPI_SLAVE->PSEL.CSN);
 }
 
 static const struct spi_config spi_cfg = {
@@ -31,10 +35,8 @@ static const struct spi_config spi_cfg = {
 	.slave = 1,
 };
 
-void send(int size)
+int send(int size)
 {
-	int err;
-
 	const struct spi_buf tx_buf = {
 		.buf = tx_buffer,
 		.len = size
@@ -44,14 +46,11 @@ void send(int size)
 		.count = 1
 	};
 
-	err = spi_write(p_dev, &spi_cfg, &tx);
-
-	if (err < 0) {
-		lp_printf("SPI Send error: %d\n", err);
-	}
+	/* Always returns 0, how do we tell how many bytes were send? */
+	return spi_write(p_dev, &spi_cfg, &tx);
 }
 
-int recv(int size, int timeout)
+int recv(int size)
 {
 	struct spi_buf rx_buf = {
 		.buf = rx_buffer,
