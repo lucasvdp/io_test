@@ -91,6 +91,13 @@ uint8_t lp_get(void)
 /* west build -b nrf9151dk/nrf9151/ns --pristine -- -DDTC_OVERLAY_FILE=boards/uart.overlay */
 #include "uart_dt.c"
 
+#elif DT_NODE_EXISTS(DT_NODELABEL(uart_lp))
+
+/* west build -b nrf9151dk/nrf9151/ns --pristine -- -DDTC_OVERLAY_FILE=boards/uart_lp.overlay \
+ * -DEXTRA_CONF_FILE=boards/uart_lp.conf
+ */
+#include "uart_lp_dt.c"
+
 #elif DT_NODE_EXISTS(DT_NODELABEL(twi_master))
 
 /* west build -b nrf9151dk/nrf9151/ns --pristine -- -DDTC_OVERLAY_FILE=boards/twi_master.overlay */
