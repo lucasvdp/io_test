@@ -113,10 +113,6 @@ uint8_t lp_get(void)
 
 #define RAW_TEST
 
-#define SPI_SLAVE NRF_SPIS1_NS
-#define GPIO      NRF_P0_NS
-#define UART      NRF_UARTE0_NS
-
 void spim_init(uint32_t bitrate);
 int spim_send(int size);
 int spim_send_delayed(int size);
@@ -151,39 +147,19 @@ int twis_send(int size);
 int twis_recv(int size);
 void twis_deinit(void);
 
+void gpio_init(uint32_t bitrate);
+int gpio_send(int size);
+int gpio_recv(int size);
+void gpio_deinit(void);
 
 int no_send(int size)
 {
 	return 0;
 }
 
-void gpiote_isr(const void *arg)
-{
-	GPIO->OUTCLR = GPIO_OUTSET_PIN1_Msk;
-	NRF_GPIOTE1_NS->EVENTS_IN[0] = 0;
-}
-
 int no_recv(int size)
 {
-
-	// NRF_POWER_NS->TASKS_CONSTLAT = 1;
-	GPIO->OUTSET = GPIO_OUTSET_PIN1_Msk;
-	NRF_P0_NS->PIN_CNF[1] = GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos;
-	NRF_P0_NS->PIN_CNF[2] = GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos;
-	NRF_GPIOTE1_NS->CONFIG[0] = GPIOTE_CONFIG_MODE_Event << GPIOTE_CONFIG_MODE_Pos |
-				    2 << GPIOTE_CONFIG_PSEL_Pos |
-				    GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos;
-	NRF_GPIOTE1_NS->INTENSET = GPIOTE_INTENSET_IN0_Msk;
-	irq_connect_dynamic(GPIOTE1_IRQn, 0, gpiote_isr, NULL, 0);
-	irq_enable(GPIOTE1_IRQn);
-
-	sleep(10);
-
-	NRF_GPIOTE1_NS->INTENCLR = GPIOTE_INTENCLR_IN0_Msk;
-	GPIO->PIN_CNF[1] = 0;
-	GPIO->PIN_CNF[2] = 0;
-
-	return 0;//87.8 µs 11.5 µs 76.3
+	return 0;
 }
 
 void no_deinit(void)
@@ -209,7 +185,7 @@ char *select_device(void)
 	char input;
 	int index;
 	device_option_t device_menu[] = {
-		{"None", NULL, 0, no_send, no_recv, no_deinit},
+		{"None (measure idle power)", NULL, 0, no_send, no_recv, no_deinit},
 		{"SPI master @ 125 kbps with delay", spim_init, SPIM_FREQUENCY_FREQUENCY_K125,
 				spim_send_delayed, spim_recv_delayed, spim_deinit},
 		{"SPI master @ 1 Mbps with delay", spim_init, SPIM_FREQUENCY_FREQUENCY_M1,
@@ -232,6 +208,7 @@ char *select_device(void)
 		{"TWI master @ 400 kbps", twim_init, TWIM_FREQUENCY_FREQUENCY_K400,
 				twim_send, twim_recv, twim_deinit},
 		{"TWI slave", twis_init, 0, twis_send, twis_recv, twis_deinit},
+		{"GPIO interrupt response timing", gpio_init, 0, gpio_send, gpio_recv, gpio_deinit},
 	};
 
 	lp_printf("\nSelect device:\n");
@@ -247,10 +224,12 @@ char *select_device(void)
 	if (input == '[') {
 		lp_printf("Switching to Constant latency mode\n", input);
 		NRF_POWER_NS->TASKS_CONSTLAT = 1;
+		return "";
 	}
 	if (input == ']') {
 		lp_printf("Switching to low power mode\n", input);
 		NRF_POWER_NS->TASKS_LOWPWR = 1;
+		return "";
 	}
 	if (input < 'a' || input >= 'a' + ARRAY_SIZE(device_menu)) {
 		lp_printf("Invalid selection '%c'\n", input);
