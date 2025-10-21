@@ -23,7 +23,7 @@ int lp_printf(const char *fmt, ...)
 	NRF_UARTE0_NS->ENABLE = UARTE_ENABLE_ENABLE_Enabled;
 
 	va_start(args, fmt);
-	ret = vprintf(fmt, args);  // Standard printf (or your custom version)
+	ret = vprintf(fmt, args);
 	va_end(args);
 
 	while (!NRF_UARTE0_NS->EVENTS_ENDTX) {
@@ -186,9 +186,11 @@ char *select_device(void)
 	int index;
 	device_option_t device_menu[] = {
 		{"None (measure idle power)", NULL, 0, no_send, no_recv, no_deinit},
-		{"SPI master @ 125 kbps with delay", spim_init, SPIM_FREQUENCY_FREQUENCY_K125,
+		{"SPI master @ 125 kbps with increased CSN to CLK delay", spim_init,
+				SPIM_FREQUENCY_FREQUENCY_K125,
 				spim_send_delayed, spim_recv_delayed, spim_deinit},
-		{"SPI master @ 1 Mbps with delay", spim_init, SPIM_FREQUENCY_FREQUENCY_M1,
+		{"SPI master @ 1 Mbps with increased CSN to CLK delay", spim_init,
+				SPIM_FREQUENCY_FREQUENCY_M1,
 				spim_send_delayed, spim_recv_delayed, spim_deinit},
 		{"SPI master @ 1 Mbps", spim_init, SPIM_FREQUENCY_FREQUENCY_M1,
 				spim_send, spim_recv, spim_deinit},
@@ -211,11 +213,12 @@ char *select_device(void)
 		{"GPIO interrupt response timing", gpio_init, 0, gpio_send, gpio_recv, gpio_deinit},
 	};
 
-	lp_printf("\nSelect device:\n");
+	lp_printf("\nSelect peripheral:\n");
 	for (index = 0; index < ARRAY_SIZE(device_menu); index++) {
 		lp_printf("  %c. %s\n", 'a' + index, device_menu[index].label);
 	}
 
+	lp_printf("Configuration:\n");
 	lp_printf("  [. Constant latency (keep clock on)\n");
 	lp_printf("  ]. Low power mode (disable clock while idle)\n");
 
@@ -245,7 +248,7 @@ char *select_device(void)
 	}
 	send = device_menu[index].send;
 	recv = device_menu[index].recv;
-	deinit = device_menu->deinit;
+	deinit = device_menu[index].deinit;
 
 	return device_menu[index].label;
 }
@@ -346,27 +349,6 @@ bool run_test(void)
 
 int main(void)
 {
-
-
-	// NRF_GPIOTE1_NS->CONFIG[0] = GPIOTE_CONFIG_MODE_Event |
-	// 			    16 << GPIOTE_CONFIG_PSEL_Pos |
-	// 			    GPIOTE_CONFIG_POLARITY_LoToHi << GPIOTE_CONFIG_POLARITY_Pos;
-	// NRF_GPIOTE1_NS->PUBLISH_IN[0] = GPIOTE_PUBLISH_IN_EN_Msk |
-	// 				0 << GPIOTE_PUBLISH_IN_CHIDX_Pos;
-	// NRF_UARTE0_NS->SUBSCRIBE_STARTRX = UARTE_SUBSCRIBE_STARTRX_EN_Msk |
-	// 				   0 << UARTE_SUBSCRIBE_STARTRX_CHIDX_Pos;
-	// NRF_DPPIC->CHENSET = (1 << 0);
-
-	// NRF_GPIOTE1_NS->CONFIG[1] = GPIOTE_CONFIG_MODE_Event |
-	// 			    16 << GPIOTE_CONFIG_PSEL_Pos |
-	// 			    GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos;
-	// NRF_GPIOTE1_NS->PUBLISH_IN[1] = GPIOTE_PUBLISH_IN_EN_Enabled << GPIOTE_PUBLISH_IN_EN_Pos |
-	// 				1 << GPIOTE_PUBLISH_IN_CHIDX_Pos;
-	// NRF_UARTE0_NS->SUBSCRIBE_STOPRX = UARTE_SUBSCRIBE_STARTRX_EN_Msk |
-	// 				  1 << UARTE_SUBSCRIBE_STARTRX_CHIDX_Pos;
-	// NRF_DPPIC->CHENSET = (1 << 1);
-
-
 	/* Modem is not used but always needs to be initialised to prevent 3 mA power drain. */
 	nrf_modem_lib_init();
 
