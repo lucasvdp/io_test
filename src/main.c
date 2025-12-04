@@ -11,8 +11,12 @@
 #include <zephyr/logging/log.h>
 #include <modem/nrf_modem_lib.h>
 
-uint8_t tx_buffer[1024];
-uint8_t rx_buffer[2048];
+#define RED	"\e[0;31m"
+#define GREEN	"\e[0;32m"
+#define NORMAL	"\e[0m"
+
+uint8_t tx_buffer[8*1024];
+uint8_t rx_buffer[8*1024];
 
 /* Keeping UARTE0 on drains a bit of power */
 int lp_printf(const char *fmt, ...)
@@ -34,24 +38,33 @@ int lp_printf(const char *fmt, ...)
 	return ret;
 }
 
-void lp_print_rx(int received)
+void lp_print_rx(int received, int expected)
 {
-	lp_printf("Received %d bytes %02x%02x%02x%02x %02x%02x%02x%02x ...\n", received,
+	lp_printf("Received %d bytes %02x%02x%02x%02x %02x%02x%02x%02x ... ", received,
 			rx_buffer[0], rx_buffer[1], rx_buffer[2], rx_buffer[3],
 			rx_buffer[4], rx_buffer[5], rx_buffer[6], rx_buffer[7]);
 
+	if (received != expected) {
+		lp_printf(RED "Instead of %d bytes" NORMAL, expected);
+		return;
+
+	}
+
 	if (received != (rx_buffer[0] << 8) + rx_buffer[1]) {
-		lp_printf("Size mismatch, first bytes indicate %d but received %d\n",
-			  (rx_buffer[0] << 8) + rx_buffer[1], received);
+		lp_printf(RED "Packet header indicates %d bytes" NORMAL,
+			  (rx_buffer[0] << 8) + rx_buffer[1]);
+		return;
 	}
 
 	for (int i = 2; i < received; i++) {
 		if (rx_buffer[i] != (i & 0xff)) {
-			lp_printf("Mismatch in byte %d expected %02x got %02x\n", i, i & 0xff,
-				  rx_buffer[i]);
-			break;
+			lp_printf(RED "Mismatch in byte %d" NORMAL" expected %02x got %02x\n", i,
+				  i & 0xff, rx_buffer[i]);
+			return;
 		}
 	}
+
+	lp_printf(GREEN "OK\n" NORMAL);
 }
 
 uint8_t lp_get(void)
@@ -194,6 +207,9 @@ char *select_device(void)
 				spim_send_delayed, spim_recv_delayed, spim_deinit},
 		{"SPI master @ 1 Mbps", spim_init, SPIM_FREQUENCY_FREQUENCY_M1,
 				spim_send, spim_recv, spim_deinit},
+		{"SPI master @ 8 Mbps with increased CSN to CLK delay", spim_init,
+				SPIM_FREQUENCY_FREQUENCY_M8,
+				spim_send_delayed, spim_recv_delayed, spim_deinit},
 		{"SPI slave", spis_init, 0, spis_send, spis_recv, spis_deinit},
 		{"UART @ 115.2 kbps", uart_init, UARTE_BAUDRATE_BAUDRATE_Baud115200,
 				uart_send, uart_recv, uart_deinit},
@@ -206,6 +222,8 @@ char *select_device(void)
 		{"UART with enable pins @ 1 Mbps", uart_lp_init, UARTE_BAUDRATE_BAUDRATE_Baud1M,
 				uart_lp_send, uart_lp_recv, uart_deinit},
 		{"TWI master @ 100 kbps", twim_init, TWIM_FREQUENCY_FREQUENCY_K100,
+				twim_send, twim_recv, twim_deinit},
+		{"TWI master @ 250 kbps", twim_init, TWIM_FREQUENCY_FREQUENCY_K250,
 				twim_send, twim_recv, twim_deinit},
 		{"TWI master @ 400 kbps", twim_init, TWIM_FREQUENCY_FREQUENCY_K400,
 				twim_send, twim_recv, twim_deinit},
@@ -258,36 +276,20 @@ char *select_device(void)
 
 typedef struct {
 	const char *label;
-	int (*func)(void);
+	int size;
+	int (*func)(int);
 } test_option_t;
 
-int sleep_10(void)
+int sleep_10(int size)
 {
 	return sleep(10);
 }
 
-int send_16(void)
+int set_size_and_send(int size)
 {
-	tx_buffer[0] = 0;
-	tx_buffer[1] = 16;
-	return send(16);
-}
-
-int send_1024(void)
-{
-	tx_buffer[0] = 1024 >> 8;
-	tx_buffer[1] = 1024 & 0xff;
-	return send(1024);
-}
-
-int recv_16(void)
-{
-	return recv(16);
-}
-
-int recv_1024(void)
-{
-	return recv(1024);
+	tx_buffer[0] = size >> 8;
+	tx_buffer[1] = size & 0xff;
+	return send(size);
 }
 
 bool run_test(void)
@@ -295,11 +297,13 @@ bool run_test(void)
 	int ret;
 	int input;
 	test_option_t test_menu[] = {
-		{"Sleep 10 s", sleep_10},
-		{"Send 16 bytes", send_16},
-		{"Send 1024 bytes", send_1024},
-		{"Receive 16 bytes", recv_16},
-		{"Receive 1024 bytes", recv_1024},
+		{"Sleep 10 s", 0, sleep_10},
+		{"Send 16 bytes", 16, set_size_and_send},
+		{"Send 1024 bytes", 1024, set_size_and_send},
+		{"Send 8 kbytes", 8 * 1024 - 1, set_size_and_send},
+		{"Receive 16 bytes", 16, recv},
+		{"Receive 1024 bytes", 1024, recv},
+		{"Receive 8 kbytes", 8 * 1024 - 1, recv},
 	};
 
 	lp_printf("\nSelect test:\n");
@@ -327,19 +331,22 @@ bool run_test(void)
 
 	sleep(1);
 
-	ret = test_menu[input].func();
+	ret = test_menu[input].func(test_menu[input].size);
 
 	sleep(1);
 
 	if (ret == 0) {
 		lp_printf("Test done\n", ret);
 	} else if (ret < 0) {
-		lp_printf("Test returned %d\n", ret);
+		lp_printf(RED "Test returned %d\n" NORMAL, ret);
 	} else {
 		if (test_menu[input].label[0] == 'R') {
-			lp_print_rx(ret);
+			lp_print_rx(ret, test_menu[input].size);
+		} else if (test_menu[input].size != ret) {
+			lp_printf("Send %d bytes " RED "instead of %d bytes" NORMAL "\n", ret,
+				  test_menu[input].size);
 		} else {
-			lp_printf("Send %d bytes\n", ret);
+			lp_printf("Send %d bytes " GREEN "OK" NORMAL "\n", ret);
 		}
 	}
 
