@@ -19,12 +19,12 @@ extern uint8_t rx_buffer[2048];
 
 int lp_printf(const char *fmt, ...);
 
-static bool transfer_done = false;
+K_SEM_DEFINE(twis_done, 0, 1);
 
 void twis_isr(const void *arg)
 {
 	if (TWI_SLAVE->EVENTS_STOPPED) {
-		transfer_done = true;
+		k_sem_give(&twis_done);
 		TWI_SLAVE->EVENTS_STOPPED = 0;
 	}
 	if (TWI_SLAVE->EVENTS_READ) {
@@ -63,6 +63,7 @@ void twis_init(uint32_t bitrate)
 	/* Configure. */
 	TWI_SLAVE->ADDRESS[0] = 42;
 	TWI_SLAVE->CONFIG = TWIS_CONFIG_ADDRESS0_Msk;
+	/* Suspend after we have received a READ or WRITE flag so we can either start RX or TX. */
 	TWI_SLAVE->SHORTS = TWIS_SHORTS_READ_SUSPEND_Msk | TWIS_SHORTS_WRITE_SUSPEND_Msk;
 
 	/* Enable interrupt to wake up at the end of a message. */
@@ -82,11 +83,14 @@ int twis_send(int size)
 {
 	TWI_SLAVE->TXD.MAXCNT = size;
 
-	while (!TWI_SLAVE->EVENTS_TXSTARTED || !transfer_done) {
-		__WFI();
+	if (k_sem_take(&twis_done,  K_SECONDS(60))) {
+		return -ETIMEDOUT;
 	}
 
-	transfer_done = false;
+	if (!TWI_SLAVE->EVENTS_TXSTARTED) {
+		return -EBADR;	/* Got RX instead of TX. */
+	}
+
 	TWI_SLAVE->EVENTS_TXSTARTED = 0;
 
 	return TWI_SLAVE->TXD.AMOUNT;
@@ -96,11 +100,14 @@ int twis_recv(int size)
 {
 	TWI_SLAVE->RXD.MAXCNT = size;
 
-	while (!TWI_SLAVE->EVENTS_RXSTARTED || !transfer_done) {
-		__WFI();
+	if (k_sem_take(&twis_done,  K_SECONDS(60))) {
+		return -ETIMEDOUT;
 	}
 
-	transfer_done = false;
+	if (!TWI_SLAVE->EVENTS_RXSTARTED) {
+		return -EBADR;	/* Got TX instead of RX. */
+	}
+
 	TWI_SLAVE->EVENTS_RXSTARTED = 0;
 
 	return TWI_SLAVE->RXD.AMOUNT;

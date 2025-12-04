@@ -21,12 +21,12 @@ extern uint8_t rx_buffer[2048];
 
 int lp_printf(const char *fmt, ...);
 
-static bool transfer_done = false;
+K_SEM_DEFINE(spim_done, 0, 1);
 
 void spim_isr(const void *arg)
 {
-	transfer_done = true;
 	SPI_MASTER->EVENTS_END = 0;
+	k_sem_give(&spim_done);
 }
 
 void spim_init(uint32_t bitrate)
@@ -88,11 +88,7 @@ int spim_send(int size)
 
 	SPI_MASTER->TASKS_START = 1;
 
-	while (!transfer_done) {
-		__WFI();
-	}
-
-	transfer_done = false;
+	k_sem_take(&spim_done, K_FOREVER);
 
 	/* CS: high. */
 	GPIO->OUTSET = 1 << PIN_CS;
@@ -112,11 +108,7 @@ int spim_send_delayed(int size)
 
 	SPI_MASTER->TASKS_START = 1;
 
-	while (!transfer_done) {
-		__WFI();
-	}
-
-	transfer_done = false;
+	k_sem_take(&spim_done, K_FOREVER);
 
 	usleep(1);
 
@@ -136,11 +128,7 @@ int spim_recv(int size)
 
 	SPI_MASTER->TASKS_START = 1;
 
-	while (!transfer_done) {
-		__WFI();
-	}
-
-	transfer_done = false;
+	k_sem_take(&spim_done, K_FOREVER);
 
 	/* CS: high. */
 	GPIO->OUTSET = 1 << PIN_CS;
@@ -160,11 +148,7 @@ int spim_recv_delayed(int size)
 
 	SPI_MASTER->TASKS_START = 1;
 
-	while (!transfer_done) {
-		__WFI();
-	}
-
-	transfer_done = false;
+	k_sem_take(&spim_done, K_FOREVER);
 
 	usleep(1);
 

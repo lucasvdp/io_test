@@ -19,14 +19,14 @@
 extern uint8_t tx_buffer[1024];
 extern uint8_t rx_buffer[2048];
 
-int lp_printf(const char *fmt, ...);
+K_SEM_DEFINE(spis_done, 0, 1);
 
-static bool transfer_done = false;
+int lp_printf(const char *fmt, ...);
 
 static void spis_isr(const void *arg)
 {
-	transfer_done = true;
 	SPI_SLAVE->EVENTS_END = 0;
+	k_sem_give(&spis_done);
 }
 
 void spis_init(uint32_t bitrate)
@@ -79,11 +79,10 @@ int spis_send(int size)
 	SPI_SLAVE->RXD.MAXCNT = 0;
 	SPI_SLAVE->TASKS_RELEASE = 1;
 
-	while (!transfer_done) {
-		__WFI();
+	if (k_sem_take(&spis_done,  K_SECONDS(60))) {
+		SPI_SLAVE->TASKS_ACQUIRE = 1;
+		return -ETIMEDOUT;
 	}
-
-	transfer_done = false;
 
 	return SPI_SLAVE->TXD.AMOUNT;
 }
@@ -94,11 +93,10 @@ int spis_recv(int size)
 	SPI_SLAVE->RXD.MAXCNT = size;
 	SPI_SLAVE->TASKS_RELEASE = 1;
 
-	while (!transfer_done) {
-		__WFI();
+	if (k_sem_take(&spis_done,  K_SECONDS(60))) {
+		SPI_SLAVE->TASKS_ACQUIRE = 1;
+		return -ETIMEDOUT;
 	}
-
-	transfer_done = false;
 
 	return SPI_SLAVE->RXD.AMOUNT;
 }

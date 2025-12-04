@@ -19,19 +19,19 @@ extern uint8_t rx_buffer[2048];
 
 int lp_printf(const char *fmt, ...);
 
-static bool transfer_done = false;
+K_SEM_DEFINE(twim_done, 0, 1);
 static bool error = false;
 
 void twim_isr(const void *arg)
 {
 	if (TWI_MASTER->EVENTS_STOPPED) {
-		transfer_done = true;
 		TWI_MASTER->EVENTS_STOPPED = 0;
 	}
 	if (TWI_MASTER->EVENTS_ERROR) {
 		error = true;
 		TWI_MASTER->EVENTS_ERROR = 0;
 	}
+	k_sem_give(&twim_done);
 }
 
 void twim_init(uint32_t bitrate)
@@ -76,20 +76,19 @@ int twim_send(int size)
 {
 	int err = 0;
 
-	transfer_done = false;
 	error = false;
 
 	TWI_MASTER->TXD.MAXCNT = size;
 	TWI_MASTER->TASKS_STARTTX = 1;
 
-	while (!transfer_done) {
-		if (error) {
-			err = TWI_MASTER->ERRORSRC;
-			TWI_MASTER->ERRORSRC = err;
-			TWI_MASTER->TASKS_STOP = 1;
-			return -err;
-		}
-		__WFI();
+	k_sem_take(&twim_done, K_FOREVER);
+
+	if (error) {
+		err = TWI_MASTER->ERRORSRC;
+		TWI_MASTER->ERRORSRC = err;
+		TWI_MASTER->TASKS_STOP = 1;
+		k_sem_take(&twim_done, K_FOREVER);
+		return -err;
 	}
 
 	return TWI_MASTER->TXD.AMOUNT;
@@ -99,20 +98,19 @@ int twim_recv(int size)
 {
 	int err = 0;
 
-	transfer_done = false;
 	error = false;
 
 	TWI_MASTER->RXD.MAXCNT = size;
 	TWI_MASTER->TASKS_STARTRX = 1;
 
-	while (!transfer_done) {
-		if (error) {
-			err = TWI_MASTER->ERRORSRC;
-			TWI_MASTER->ERRORSRC = err;
-			TWI_MASTER->TASKS_STOP = 1;
-			return -err;
-		}
-		__WFI();
+	k_sem_take(&twim_done, K_FOREVER);
+
+	if (error) {
+		err = TWI_MASTER->ERRORSRC;
+		TWI_MASTER->ERRORSRC = err;
+		TWI_MASTER->TASKS_STOP = 1;
+		k_sem_take(&twim_done, K_FOREVER);
+		return -err;
 	}
 
 	return TWI_MASTER->RXD.AMOUNT;

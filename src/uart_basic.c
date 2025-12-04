@@ -23,19 +23,18 @@ extern uint8_t tx_buffer[1024];
 extern uint8_t rx_buffer[2048];
 
 int lp_printf(const char *fmt, ...);
-bool rx_done = false;
-bool tx_done = false;
+
+K_SEM_DEFINE(uart_done, 0, 1);
 
 void uart_isr(const void *arg)
 {
 	if (UART->EVENTS_ENDRX) {
-		rx_done = true;
 		UART->EVENTS_ENDRX = 0;
 	}
 	if (UART->EVENTS_ENDTX) {
-		tx_done = true;
 		UART->EVENTS_ENDTX = 0;
 	}
+	k_sem_give(&uart_done);
 }
 
 void uart_init(uint32_t bitrate)
@@ -118,11 +117,7 @@ int uart_send(size_t size)
 	UART->TXD.MAXCNT = size;
 	UART->TASKS_STARTTX = 1;
 
-	while (!tx_done) {
-		__WFI();
-	}
-
-	tx_done = false;
+	k_sem_take(&uart_done, K_FOREVER);
 
 	UART->TASKS_STOPTX = 1;
 	return UART->TXD.AMOUNT;
@@ -143,11 +138,7 @@ int uart_lp_send(size_t size)
 	/* Set REQ pin to input with pullup this will signal RDY. */
 	GPIO->PIN_CNF[PIN_REQ] = GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos;
 
-	while (!tx_done) {
-		__WFI();
-	}
-
-	tx_done = false;
+	k_sem_take(&uart_done, K_FOREVER);
 
 	UART->TASKS_STOPTX = 1;
 
@@ -170,11 +161,7 @@ int uart_recv(int size)
 	UART->RXD.MAXCNT = size;
 	UART->TASKS_STARTRX = 1;
 
-	while (!rx_done) {
-		__WFI();
-	}
-
-	rx_done = false;
+	k_sem_take(&uart_done, K_FOREVER);
 
 	return UART->RXD.AMOUNT;
 }
@@ -219,7 +206,7 @@ int uart_lp_recv(int size)
 	 * and an output on the same pin at the same time.
 	 * We could use two more pins instead of the interrupt.
 	 */
-	UART->RXD.MAXCNT = size;
+	UART->RXD.MAXCNT = size + 1; /* Shortcut, prevent buffer overrun from stopping RX. */
 
 	/* Enable interrupt on pin RDY low to high. */
 	GPIOTE->CONFIG[1] = GPIOTE_CONFIG_MODE_Event |
@@ -230,11 +217,7 @@ int uart_lp_recv(int size)
 	irq_connect_dynamic(GPIOTE1_IRQn, 0, pin_isr, NULL, 0);
 	irq_enable(GPIOTE1_IRQn);
 
-	while (!rx_done) {
-		__WFI();
-	}
-
-	rx_done = false;
+	k_sem_take(&uart_done, K_FOREVER);
 
 	/* Stop RDY pin STOPRX link. */
 	GPIOTE->PUBLISH_IN[1] = 0;
