@@ -300,10 +300,10 @@ bool run_test(void)
 		{"Sleep 10 s", 0, sleep_10},
 		{"Send 16 bytes", 16, set_size_and_send},
 		{"Send 1024 bytes", 1024, set_size_and_send},
-		{"Send 8 kbytes", 8 * 1024 - 1, set_size_and_send},
+		{"Send 8 kbytes", 8 * 1024 - 2, set_size_and_send},
 		{"Receive 16 bytes", 16, recv},
 		{"Receive 1024 bytes", 1024, recv},
-		{"Receive 8 kbytes", 8 * 1024 - 1, recv},
+		{"Receive 8 kbytes", 8 * 1024 - 2, recv},
 	};
 
 	lp_printf("\nSelect test:\n");

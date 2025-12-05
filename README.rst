@@ -12,7 +12,7 @@ Building
 There are two ways of compiling this application:
 
 * compile without device tree overlays, you can select the peripheral you want to test from the
-  terminal. In this mode registers will be written directly from the application.
+  terminal. In this mode registers will be written directly from the application (Bare metal).
 * compile with a specific device tree overlay. In this mode NCS drivers will be used to control the
   peripheral. Example:
 

@@ -13,11 +13,14 @@
 #define TIMER   NRF_TIMER0_NS
 #define GPIO    NRF_P0_NS
 #define GPIOTE  NRF_GPIOTE1_NS
+#define REQ_DPPI_CHANNEL 1
+#define REQ_GPIOTE_NR 0
+#define RDY_DPPI_CHANNEL 2
+#define RDY_GPIOTE_NR 1
 #define PIN_TXD 6
 #define PIN_RXD 7
 #define PIN_REQ 2
 #define PIN_RDY 3
-
 
 extern uint8_t tx_buffer[1024];
 extern uint8_t rx_buffer[2048];
@@ -99,14 +102,18 @@ void uart_lp_init(uint32_t bitrate)
 {
 	uart_init(bitrate);
 
-	/* Output low, pull disabled,standard 0, standard 1. */
+	/* Disable UART completely while not using it to save power. */
+	UART->ENABLE = 0;
+
+	/* Output low, connect input, pull disabled, standard 0, standard 1, no sense. */
 	GPIO->OUTCLR = 1 << PIN_REQ;
 	GPIO->PIN_CNF[PIN_REQ] = GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos;
 
-	/* Output disconnect, pull disabled, standard 0, disconnect 1. */
+	/* Output high, connect input, pull disabled, standard 0, disconnect 1, Sense high. */
 	GPIO->OUTSET = 1 << PIN_RDY;
 	GPIO->PIN_CNF[PIN_RDY] = (GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos) |
-				 (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos);
+				 (GPIO_PIN_CNF_DRIVE_S0D1 << GPIO_PIN_CNF_DRIVE_Pos) |
+				 (GPIO_PIN_CNF_SENSE_High << GPIO_PIN_CNF_SENSE_Pos);
 
 	lp_printf("    REQ     P0.%02d\n", PIN_REQ);
 	lp_printf("    RDY     P0.%02d\n", PIN_RDY);
@@ -127,31 +134,39 @@ int uart_lp_send(size_t size)
 {
 	UART->TXD.MAXCNT = size;
 
-	/* Start send ON REQ pin high to low using channel 1. */
-	GPIOTE->CONFIG[0] = GPIOTE_CONFIG_MODE_Event |
-			    (PIN_REQ << GPIOTE_CONFIG_PSEL_Pos) |
-			    (GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos);
-	GPIOTE->PUBLISH_IN[0] = GPIOTE_PUBLISH_IN_EN_Msk | 1;
-	UART->SUBSCRIBE_STARTTX = UARTE_SUBSCRIBE_STARTTX_EN_Msk | 1;
-	NRF_DPPIC->CHENSET = (1 << 1);
+	/* Enable UART */
+	UART->ENABLE = UARTE_ENABLE_ENABLE_Enabled;
+
+	/* Enable TX ON REQ pin high to low using channel 1. */
+	GPIOTE->CONFIG[REQ_GPIOTE_NR] = GPIOTE_CONFIG_MODE_Event |
+				      (PIN_REQ << GPIOTE_CONFIG_PSEL_Pos) |
+				      (GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos);
+	GPIOTE->PUBLISH_IN[REQ_GPIOTE_NR] = GPIOTE_PUBLISH_IN_EN_Msk | REQ_DPPI_CHANNEL;
+	UART->SUBSCRIBE_STARTTX = UARTE_SUBSCRIBE_STARTTX_EN_Msk | REQ_DPPI_CHANNEL;
+	NRF_DPPIC->CHENSET = (1 << REQ_DPPI_CHANNEL);
 
 	/* Set REQ pin to input with pullup this will signal RDY. */
 	GPIO->PIN_CNF[PIN_REQ] = GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos;
 
+	/* Wait for TX done. */
 	k_sem_take(&uart_done, K_FOREVER);
 
 	UART->TASKS_STOPTX = 1;
 
-	/* Disable start on REQ pin high to low. */
-	GPIOTE->CONFIG[0] = GPIOTE_CONFIG_MODE_Disabled | (PIN_REQ << GPIOTE_CONFIG_PSEL_Pos);
-	GPIOTE->CONFIG[0] = 0;
-	GPIOTE->PUBLISH_IN[0] = 0;
+	/* Disable TX on REQ pin in two steps to prevent 23 µA current leak. */
+	GPIOTE->CONFIG[REQ_GPIOTE_NR] = GPIOTE_CONFIG_MODE_Disabled |
+					(PIN_REQ << GPIOTE_CONFIG_PSEL_Pos);
+	GPIOTE->CONFIG[REQ_GPIOTE_NR] = 0;
+	GPIOTE->PUBLISH_IN[REQ_GPIOTE_NR] = 0;
 	UART->SUBSCRIBE_STARTTX = 0;
-	NRF_DPPIC->CHENCLR = (1 << 1);
+	NRF_DPPIC->CHENCLR = (1 << REQ_DPPI_CHANNEL);
 
 	/* Dir output low, input disconnect, pull disabled, drive s0s1, sense disabled. */
 	GPIO->OUTCLR = 1 << PIN_REQ;
 	GPIO->PIN_CNF[PIN_REQ] = GPIO_PIN_CNF_DIR_Output << GPIO_PIN_CNF_DIR_Pos;
+
+	/* Disable UART completely to save power. */
+	UART->ENABLE = 0;
 
 	return UART->TXD.AMOUNT;
 }
@@ -169,12 +184,13 @@ int uart_recv(int size)
 void pin_isr(const void *arg)
 {
 	__NOP();
+
+	/* Enable UART andd RX. */
+	UART->ENABLE = UARTE_ENABLE_ENABLE_Enabled;
 	UART->TASKS_STARTRX = 1;
 
-	/* Dir output low, input disconnect, pull disabled, drive s0s1, sense disabled. */
-	GPIOTE->CONFIG[1] = 0;
+	/* Toggle RDY low to signal we have enabled RX. */
 	GPIO->OUTCLR = 1 << PIN_RDY;
-
 	__NOP();
 	__NOP();
 	__NOP();
@@ -183,49 +199,48 @@ void pin_isr(const void *arg)
 	__NOP();
 	__NOP();
 	__NOP();
-
-	/* Set RDY pin to input with pullup this will signal UART is Ready to REQ. */
 	GPIO->OUTSET = 1 << PIN_RDY;
 
 	/* Link RDY pin high to low to STOPRX using Channel 2. */
-	GPIOTE->CONFIG[1] = GPIOTE_CONFIG_MODE_Event |
-			    (PIN_RDY << GPIOTE_CONFIG_PSEL_Pos) |
-			    (GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos);
-	GPIOTE->PUBLISH_IN[1] = GPIOTE_PUBLISH_IN_EN_Msk | 2;
-	UART->SUBSCRIBE_STOPRX = UARTE_SUBSCRIBE_STOPRX_EN_Msk | 2;
-	NRF_DPPIC->CHENSET = (1 << 2);
+	GPIOTE->CONFIG[RDY_GPIOTE_NR] = GPIOTE_CONFIG_MODE_Event |
+				      (PIN_RDY << GPIOTE_CONFIG_PSEL_Pos) |
+				      (GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos);
+	GPIOTE->PUBLISH_IN[RDY_GPIOTE_NR] = GPIOTE_PUBLISH_IN_EN_Msk | RDY_DPPI_CHANNEL;
+	UART->SUBSCRIBE_STOPRX = UARTE_SUBSCRIBE_STOPRX_EN_Msk | RDY_DPPI_CHANNEL;
+	NRF_DPPIC->CHENSET = (1 << RDY_DPPI_CHANNEL);
 
-	/* Disable this interupt. */
-	GPIOTE->INTENCLR = GPIOTE_INTENCLR_IN1_Msk;
-	GPIOTE->EVENTS_IN[1] = 0;
+	/* Disable this interrupt. */
+	GPIOTE->INTENCLR = GPIOTE_INTENCLR_PORT_Msk;
+	GPIOTE->EVENTS_PORT = 0;
 }
 
 int uart_lp_recv(int size)
 {
-	/* We have to use an interrupt instead of DPPI links as we cannot use GPIOTE as an input
-	 * and an output on the same pin at the same time.
-	 * We could use two more pins instead of the interrupt.
+	/* We can't enable UART using DPPI so we will use an interrupt instead
+	 * We use PORT instead of IN[n] to safe 20 µA.
 	 */
-	UART->RXD.MAXCNT = size + 1; /* Shortcut, prevent buffer overrun from stopping RX. */
 
-	/* Enable interrupt on pin RDY low to high. */
-	GPIOTE->CONFIG[1] = GPIOTE_CONFIG_MODE_Event |
-			    (PIN_RDY << GPIOTE_CONFIG_PSEL_Pos) |
-			    (GPIOTE_CONFIG_POLARITY_LoToHi << GPIOTE_CONFIG_POLARITY_Pos);
-	GPIOTE->EVENTS_IN[1] = 0;
-	GPIOTE->INTENSET = GPIOTE_INTENSET_IN1_Msk;
+	UART->RXD.MAXCNT = size + 1; /* Shortcut, we want pin RDY to stop RX not buffer overrun. */
+
+	/* Enable interrupt on pin RDY high. */
+	GPIOTE->EVENTS_PORT = 0;
+	GPIOTE->INTENSET = GPIOTE_INTENSET_PORT_Msk;
 	irq_connect_dynamic(GPIOTE1_IRQn, 0, pin_isr, NULL, 0);
 	irq_enable(GPIOTE1_IRQn);
 
+	/* Wait for RX to finish. */
 	k_sem_take(&uart_done, K_FOREVER);
 
-	/* Stop RDY pin STOPRX link. */
-	GPIOTE->PUBLISH_IN[1] = 0;
-	/* Need to disable GPIOTE in two steps to prevent 23 µA current leak. */
-	GPIOTE->CONFIG[1] = GPIOTE_CONFIG_MODE_Disabled | (PIN_RDY << GPIOTE_CONFIG_PSEL_Pos);
-	GPIOTE->CONFIG[1] = 0;
+	/* Disable interrupt on RDY pin in two steps to prevent 23 µA current leak. */
+	GPIOTE->CONFIG[RDY_GPIOTE_NR] = GPIOTE_CONFIG_MODE_Disabled |
+					(PIN_RDY << GPIOTE_CONFIG_PSEL_Pos);
+	GPIOTE->CONFIG[RDY_GPIOTE_NR] = 0;
+	GPIOTE->PUBLISH_IN[RDY_GPIOTE_NR] = 0;
 	UART->SUBSCRIBE_STOPRX = 0;
-	NRF_DPPIC->CHENCLR = (1 << 2);
+	NRF_DPPIC->CHENCLR = (1 << RDY_DPPI_CHANNEL);
+
+	/* Disable UART completely to save power. */
+	UART->ENABLE = 0;
 
 	return UART->RXD.AMOUNT;
 }
