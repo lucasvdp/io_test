@@ -16,7 +16,7 @@ There are two ways of compiling this application:
 * compile with a specific device tree overlay. In this mode NCS drivers will be used to control the
   peripheral. Example:
 
-``west build -p -b nrf9151dk/nrf9151/ns -- -DEXTRA_DTC_OVERLAY_FILE=boards/spi_slave.overlay``
+``west build -p -b nrf9151dk/nrf9151/ns -- -DEXTRA_DTC_OVERLAY_FILE=dt_overlays/spi_slave.overlay``
 
 Interrupt latency
 =================
