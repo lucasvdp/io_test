@@ -1,7 +1,7 @@
 Peripheral tests for nRF9151
 ############################
 
-Run peripheral tests on an nRF9151 to test functionality and power consumption.
+Run peripheral tests on an nRF9151 to test functionality and power consumption. Tested on NCS 3.2.0.
 
 Connect a serial terminal to UART0 (115200 8N1) for monitoring and controlling the tests. This UART
 will be turned off during the test to not influence the power consumption.

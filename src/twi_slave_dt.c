@@ -12,7 +12,37 @@
 // #define DT_DRV_COMPAT nordic_nrf_twis
 #define TWI_SLAVE NRF_TWIS1_NS
 
+K_SEM_DEFINE(i2c_done, 0, 1);
+
 const struct device *p_dev;
+size_t transfer_len;
+
+void buf_write_received_cb(struct i2c_target_config *config, uint8_t *ptr, uint32_t len)
+{
+	memcpy(rx_buffer, ptr, len);
+	transfer_len = len;
+	k_sem_give(&i2c_done);
+}
+
+int buf_read_requested_cb(struct i2c_target_config *config, uint8_t **ptr, uint32_t *len)
+{
+	*ptr = tx_buffer;
+	*len = transfer_len;
+
+	k_sem_give(&i2c_done);
+
+	return 0;
+}
+
+static struct i2c_target_callbacks callbacks = {
+	.buf_write_received = buf_write_received_cb,
+	.buf_read_requested = buf_read_requested_cb
+};
+
+static struct i2c_target_config config = {
+	.address = 42,
+	.callbacks = &callbacks
+};
 
 void init(void)
 {
@@ -22,6 +52,13 @@ void init(void)
 		lp_printf("Could not get device\n");
 		return;
 	}
+
+	int err = i2c_target_register(p_dev, &config);
+
+	if (err) {
+		lp_printf("Failed to register slave, err %d\n", err);
+	}
+
 	lp_printf("\nUsing TWI Slave device: %s\n", p_dev->name);
 	lp_printf("    SCL     P0.%02d\n", TWI_SLAVE->PSEL.SCL);
 	lp_printf("    SDA     P0.%02d\n", TWI_SLAVE->PSEL.SDA);
@@ -29,16 +66,20 @@ void init(void)
 
 int send(int size)
 {
-	int err = i2c_write(p_dev, tx_buffer, size, 42);
+	transfer_len = size;
 
-	return err ? err : size;
+	k_sem_take(&i2c_done, K_FOREVER);
+
+	return transfer_len;
 }
 
 int recv(int size)
 {
-	int err = i2c_read(p_dev, rx_buffer, size, 42);
+	transfer_len = 0;
 
-	return err ? err : size;
+	k_sem_take(&i2c_done, K_FOREVER);
+
+	return transfer_len;
 }
 
 void deinit(void)

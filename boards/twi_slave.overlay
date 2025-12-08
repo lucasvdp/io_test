@@ -17,7 +17,6 @@ twi_slave:  &i2c1 {
 	pinctrl-0 = <&i2c1_default>;
 	pinctrl-1 = <&i2c1_sleep>;
 	pinctrl-names = "default", "sleep";
-	address-0 = <42>;
 };
 
 &pinctrl {
